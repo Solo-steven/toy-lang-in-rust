@@ -1,0 +1,47 @@
+\documentclass[12pt]{article}
+\input{preamble}
+
+\begin{document}
+\noindent Grammar:
+\begin{python}
+Program      -> ProgramItems
+ProgramItems -> ProgramItem ProgramItems
+ProgramItem  -> Statement | Expression | Declaration
+\end{python}
+\noindent Declaration
+\begin{python}
+Declaration  -> FunctionDeclaration
+             -> VariableDeclaration
+FunctionDeclaration -> 'function' Identifier '(' Arguments ')' ':' Type BlockStatement
+Arguments           -> Identifier [,Identifier]
+Type                -> 'number' | 'void'
+VariableDeclaration -> 'var' Identifier ('=' ConditionalExpression)?
+\end{python}
+\noindent Statement
+\begin{python}
+Statement -> WhileStatement
+          -> IfStatement
+          -> BlockStatement
+          -> ReturnStatement
+WhileStatement  -> 'while' '(' Expression ')' BlockStatement
+ReturnStatement -> 'return' Expression
+BlockStatement  -> '{' [ProgramIem]'}'
+\end{python}
+\noindent Expression:
+\begin{python}
+Expression           -> AssigmentExpression
+                     -> AssigmentExpression [, AssignmentExpression] 
+AssigmentExpression  -> ConditionalExpression 
+                     -> ConditionalExpression '=' ConditionalExpression
+ConditionExpression  -> BinaryExpression
+                     -> BinaryExpression '?' BinaryExpression ':' BianryExpression
+BinaryExpression     -> UnaryExpression
+                     -> UnaryExpression BinaryOps UnaryExpression 
+UnaryExpression      -> PrimaryExpression
+                     -> UnaryOps PrimaryExpression
+PrimaryExpression    -> Identifier | Literal | CoverExpression | CallExpression
+CoverExpression      -> '(' Expression ')'
+CallExpression       -> Identifier '(' Parameters ')'
+Parameters           -> ConditionalExpression [,ConditionalExpression] 
+\end{python}
+\end{document}
