@@ -33,7 +33,7 @@ fn main() {
     println!("{:?}", token_vec);
     let mut parser = parser::Parser::new(String::from("
         function test(a, b): number {
-            return a + b
+            return a + b / 3 + 9 / 8 * 6
         }
         function main(): number {
             return test(1, 2)
