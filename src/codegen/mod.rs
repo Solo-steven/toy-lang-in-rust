@@ -2,7 +2,8 @@ use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::basic_block::BasicBlock;
 use inkwell::values::{PointerValue, FloatValue, BasicValueEnum,BasicMetadataValueEnum};
-use inkwell::types::BasicMetadataTypeEnum;
+use inkwell::FloatPredicate;
+use inkwell::types::{BasicMetadataTypeEnum, FloatType};
 use inkwell::execution_engine::JitFunction;
 use inkwell::OptimizationLevel;
 
@@ -147,19 +148,16 @@ impl<'ctx> Codegen<'ctx> {
                 }
             }
             Stmt::ReturnStmt(ref return_statement) => {
+                let llvm_value = self.accecpt_expression(&return_statement.argument);
                 let llvm_basic_block = self.current_block.as_ref().unwrap();
                 let builder = self.context.create_builder();
                 builder.position_at_end(*llvm_basic_block);
-                let llvm_value = self.accecpt_expression(&return_statement.argument);
                 match llvm_value {
                     ExprResult::Float(float_value) => {
                         builder.build_return(Some(&float_value));
                     }
                     ExprResult::BasicEnum(basic_value) => {
                         builder.build_return(Some(&basic_value));
-                    }
-                    _ => {
-                        panic!()
                     }
                 }
             }
@@ -168,7 +166,7 @@ impl<'ctx> Codegen<'ctx> {
             }
         }
     }
-    fn accecpt_expression(&self, expression: &Expr) -> ExprResult<'ctx> {
+    fn accecpt_expression(&mut self, expression: &Expr) -> ExprResult<'ctx> {
         match *expression {
             Expr::SequnceExpr(ref sequnce_expr) => {
                 for index in 1..sequnce_expr.expressions.len() {
@@ -183,7 +181,7 @@ impl<'ctx> Codegen<'ctx> {
                 self.accecpt_assigment_expression(assignment_expr)
             }
             Expr::ConditionExpr(ref conditional_expr) => {
-                panic!()
+                self.accept_conditional_expression(conditional_expr)
             }
             Expr::BinaryExpr(ref binary_expr) => {
                 self.accecpt_binary_expression(binary_expr)
@@ -214,51 +212,20 @@ impl<'ctx> Codegen<'ctx> {
                 }
             }
             Expr::CallExpr(ref call_expr) => {
-                /*
-                
-                 */
-                match self.module.get_function(call_expr.callee_name.as_str()){
-                    Some(llvm_funtion_value) => {
-                        let mut llvm_params_value = Vec::<BasicMetadataValueEnum>::new();
-                        for param in &call_expr.params {
-                            llvm_params_value.push(
-                                match self.accecpt_expression(param) {
-                                    ExprResult::Float(float_value) => {
-                                        float_value.into()
-                                    }
-                                    ExprResult::BasicEnum(basic_value) => {
-                                        basic_value.into()
-                                    }
-                                }
-                            )
-                        }                    
-                        let llvm_basic_block = self.current_block.as_ref().unwrap();
-                        let builder = self.context.create_builder();
-                        builder.position_at_end(*llvm_basic_block);
-                        
-                        ExprResult::BasicEnum(
-                            builder.build_call(
-                                    llvm_funtion_value, 
-                                    llvm_params_value.as_slice(), 
-                                    "tmpCall"
-                                )
-                                .try_as_basic_value()
-                                .left().unwrap()
-                        )
-                    }
-                    None => {
-                        panic!();
-                    }
-                }
+                self.accecpt_call_expression(call_expr)
             }
         }
     }
-    fn accecpt_assigment_expression(&self, assignment_expr: &AssigmentExpression) -> ExprResult<'ctx> {
+    fn accecpt_assigment_expression(&mut self, assignment_expr: &AssigmentExpression) -> ExprResult<'ctx> {
         /*
             Codegen store command to assign right hand side to left hand side
             -> 1. check left hand side llvm_value should be assignable.
             -> 2. build store inst to assign right hand side value to left hand side
-        */
+        */        
+        let rhs = match self.accecpt_expression(&assignment_expr.right.as_ref()) {
+            ExprResult::BasicEnum(basic_value) => basic_value.into_float_value(),
+            ExprResult::Float(float_value) => float_value,
+        };
         self.accecpt_expression(assignment_expr.left.as_ref());
         let lhs_symbol =  match *assignment_expr.left.as_ref() {
             Expr::Ident(ref ident) => {
@@ -269,69 +236,134 @@ impl<'ctx> Codegen<'ctx> {
                 panic!("[]");
             }
         };
-        let rhs = match self.accecpt_expression(&assignment_expr.right.as_ref()) {
-            ExprResult::BasicEnum(basic_value) => basic_value.into_float_value(),
-            ExprResult::Float(float_value) => float_value,
-            _ => panic!()
-        };
         let llvm_basic_block = self.current_block.as_ref().unwrap();
         let builder = self.context.create_builder();
         builder.position_at_end(*llvm_basic_block);
         builder.build_store(*lhs_symbol, rhs);
         ExprResult::Float(rhs)
     }
-    fn accecpt_binary_expression(&self, binary_expr: &BinaryExpression) -> ExprResult<'ctx>  {
-                /*
-                    Codegen Basic On Left-hand-side and Right-hand-side
-                     -> 1. get llvm_value from left and right hand side.
-                     -> 2. build the numeric inst based on operator.
-                     -> 3. return llvm_value based on  numeric inst.
-                 */
-                let lhs_llvm_value = match self.accecpt_expression(binary_expr.left.as_ref()) {
-                    ExprResult::Float(float_value) => {
-                        float_value
-                    }
-                    ExprResult::BasicEnum(basic_enum) => {
-                        basic_enum.into_float_value()
-                    }
-                    _ => {
-                        panic!()
-                    }
-                };
-                let rhs_llvm_value = match self.accecpt_expression(binary_expr.right.as_ref()) {
-                    ExprResult::Float(float_value) => {
-                        float_value
-                    }
-                    ExprResult::BasicEnum(basic_enum) => {
-                        basic_enum.into_float_value()
-                    }
-                    _ => {
-                        panic!()
-                    }
-                };
+    fn accept_conditional_expression(&mut self, conditional_expr: &ConditionExpression) -> ExprResult<'ctx> {
+        // test
+        let test_llvm_value = match self.accecpt_expression(&conditional_expr.test) {
+            ExprResult::Float(float_value) => float_value,
+            ExprResult::BasicEnum(basic_value) => basic_value.into_float_value(),
+        };
+        let llvm_basic_block = self.current_block.unwrap();
+        let builder = self.context.create_builder();
+        builder.position_at_end(llvm_basic_block);
+        let test_llvm_value = builder.build_float_compare(FloatPredicate::OEQ, test_llvm_value, self.context.f64_type().const_float(0.0), "tmpFComp");
+        let llvm_function = llvm_basic_block.get_parent().unwrap();
+        let conseq_llvm_basic_block = self.context.append_basic_block(llvm_function, "tmpConseq");
+        let alter_llvm_basic_block = self.context.append_basic_block(llvm_function, "tmpAlter");
+        let final_llvm_basic_block = self.context.append_basic_block(llvm_function, "tmpFinal");
+        builder.build_conditional_branch(test_llvm_value, conseq_llvm_basic_block, alter_llvm_basic_block);
+        // consequnce
+        self.current_block = Some(conseq_llvm_basic_block);
+        let conseq_llvm_value = match self.accecpt_expression(conditional_expr.consequnce.as_ref()) {
+            ExprResult::Float(float_value) => float_value,
+            ExprResult::BasicEnum(basic_value) => basic_value.into_float_value()
+        };
+        let conseq_builder = self.context.create_builder();
+        conseq_builder.position_at_end(conseq_llvm_basic_block);
+        conseq_builder.build_unconditional_branch(final_llvm_basic_block);
+        // alter
+        self.current_block = Some(alter_llvm_basic_block);
+        let alter_llvm_value = match self.accecpt_expression(conditional_expr.alter.as_ref()) {
+            ExprResult::Float(float_value) => float_value,
+            ExprResult::BasicEnum(basic_value) => basic_value.into_float_value()
+        };
+        let alter_builder = self.context.create_builder();
+        alter_builder.position_at_end(alter_llvm_basic_block);
+        alter_builder.build_unconditional_branch(final_llvm_basic_block);
+        // final
+        let final_builder = self.context.create_builder();
+        final_builder.position_at_end(final_llvm_basic_block);
+        let phi_node =  final_builder.build_phi(self.context.f64_type(), "conditionPhi");
+        phi_node.add_incoming(&[(&conseq_llvm_value, conseq_llvm_basic_block ), (&alter_llvm_value, alter_llvm_basic_block)]);
+        self.current_block = Some(final_llvm_basic_block);
+        ExprResult::BasicEnum(phi_node.as_basic_value())
+    }
+    fn accecpt_binary_expression(&mut self, binary_expr: &BinaryExpression) -> ExprResult<'ctx>  {
+        /*
+            Codegen Basic On Left-hand-side and Right-hand-side
+                -> 1. get llvm_value from left and right hand side.
+                -> 2. build the numeric inst based on operator.
+                -> 3. return llvm_value based on  numeric inst.
+            */
+        let lhs_llvm_value = match self.accecpt_expression(binary_expr.left.as_ref()) {
+            ExprResult::Float(float_value) => {
+                float_value
+            }
+            ExprResult::BasicEnum(basic_enum) => {
+                basic_enum.into_float_value()
+            }
+        };
+        let rhs_llvm_value = match self.accecpt_expression(binary_expr.right.as_ref()) {
+            ExprResult::Float(float_value) => {
+                float_value
+            }
+            ExprResult::BasicEnum(basic_enum) => {
+                basic_enum.into_float_value()
+            }
+        };
+        let llvm_basic_block = self.current_block.as_ref().unwrap();
+        let builder = self.context.create_builder();
+        builder.position_at_end(*llvm_basic_block);
+        match binary_expr.operator {
+            Operator::Plus => {
+                ExprResult::Float(builder.build_float_add(lhs_llvm_value, rhs_llvm_value, "tempAdd"))
+            }
+            Operator::Minus => {
+                ExprResult::Float(builder.build_float_sub(lhs_llvm_value, rhs_llvm_value, "tempSub"))
+            }
+            Operator::Multply => {
+                ExprResult::Float(builder.build_float_mul(lhs_llvm_value, rhs_llvm_value, "tempMul"))
+            }
+            Operator::Divide => {
+                ExprResult::Float(builder.build_float_div(lhs_llvm_value, rhs_llvm_value, "tempDiv"))
+            }
+            Operator::Mod => {
+                ExprResult::Float(builder.build_float_rem(lhs_llvm_value, rhs_llvm_value, "tempMod"))
+            }
+            _ => {
+                panic!()
+            }
+
+        }
+    }
+    fn accecpt_call_expression(&mut self, call_expr: &CallExpression) -> ExprResult<'ctx> {
+        match self.module.get_function(call_expr.callee_name.as_str()){
+            Some(llvm_funtion_value) => {
+                let mut llvm_params_value = Vec::<BasicMetadataValueEnum>::new();
+                for param in &call_expr.params {
+                    llvm_params_value.push(
+                        match self.accecpt_expression(param) {
+                            ExprResult::Float(float_value) => {
+                                float_value.into()
+                            }
+                            ExprResult::BasicEnum(basic_value) => {
+                                basic_value.into()
+                            }
+                        }
+                    )
+                }                    
                 let llvm_basic_block = self.current_block.as_ref().unwrap();
                 let builder = self.context.create_builder();
                 builder.position_at_end(*llvm_basic_block);
-                match binary_expr.operator {
-                    Operator::Plus => {
-                        ExprResult::Float(builder.build_float_add(lhs_llvm_value, rhs_llvm_value, "tempAdd"))
-                    }
-                    Operator::Minus => {
-                        ExprResult::Float(builder.build_float_sub(lhs_llvm_value, rhs_llvm_value, "tempSub"))
-                    }
-                    Operator::Multply => {
-                        ExprResult::Float(builder.build_float_mul(lhs_llvm_value, rhs_llvm_value, "tempMul"))
-                    }
-                    Operator::Divide => {
-                        ExprResult::Float(builder.build_float_div(lhs_llvm_value, rhs_llvm_value, "tempDiv"))
-                    }
-                    Operator::Mod => {
-                        ExprResult::Float(builder.build_float_rem(lhs_llvm_value, rhs_llvm_value, "tempMod"))
-                    }
-                    _ => {
-                        panic!()
-                    }
-
-                }
+                
+                ExprResult::BasicEnum(
+                    builder.build_call(
+                            llvm_funtion_value, 
+                            llvm_params_value.as_slice(), 
+                            "tmpCall"
+                        )
+                        .try_as_basic_value()
+                        .left().unwrap()
+                )
+            }
+            None => {
+                panic!();
+            }
+        }
     }
 }
