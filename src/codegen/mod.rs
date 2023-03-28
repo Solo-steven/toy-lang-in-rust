@@ -3,7 +3,7 @@ use inkwell::module::Module;
 use inkwell::basic_block::BasicBlock;
 use inkwell::values::{PointerValue, FloatValue, BasicValueEnum,BasicMetadataValueEnum};
 use inkwell::FloatPredicate;
-use inkwell::types::{BasicMetadataTypeEnum, FloatType};
+use inkwell::types::{BasicMetadataTypeEnum};
 use inkwell::execution_engine::JitFunction;
 use inkwell::OptimizationLevel;
 
@@ -187,7 +187,7 @@ impl<'ctx> Codegen<'ctx> {
                 self.accecpt_binary_expression(binary_expr)
             }
             Expr::UnaryExpr(ref unary_expr) => {
-                panic!()
+                self.accept_unary_expression(unary_expr)
             }
             Expr::NumberExpr(ref number_literal) => {
                 // return a llvm float value
@@ -329,6 +329,26 @@ impl<'ctx> Codegen<'ctx> {
                 panic!()
             }
 
+        }
+    }
+    fn accept_unary_expression(&mut self, unary_expr: &UnaryExpression) -> ExprResult<'ctx> {
+        let llvm_value = match self.accecpt_expression(unary_expr.argument.as_ref()) {
+            ExprResult::BasicEnum(basic_value) => basic_value.into_float_value(),
+            ExprResult::Float(float_value) => float_value
+        };
+        match unary_expr.operator {
+            Operator::Plus => {
+                ExprResult::Float(llvm_value)
+            }
+            Operator::Minus => {
+                let llvm_basic_block = self.current_block.as_ref().unwrap();
+                let builder = self.context.create_builder();
+                builder.position_at_end(*llvm_basic_block);
+                ExprResult::Float(builder.build_float_neg(llvm_value, "tmpNeg"))
+            }
+            _ => {
+                panic!()
+            }
         }
     }
     fn accecpt_call_expression(&mut self, call_expr: &CallExpression) -> ExprResult<'ctx> {
