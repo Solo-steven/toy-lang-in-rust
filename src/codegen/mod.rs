@@ -2,7 +2,7 @@ use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::basic_block::BasicBlock;
 use inkwell::values::{PointerValue, FloatValue, BasicValueEnum,BasicMetadataValueEnum};
-use inkwell::types::{BasicMetadataTypeEnum};
+use inkwell::types::BasicMetadataTypeEnum;
 use inkwell::execution_engine::JitFunction;
 use inkwell::OptimizationLevel;
 
@@ -18,8 +18,8 @@ pub struct Codegen<'ctx> {
 }
 
 enum ExprResult<'ctx> {
-    BasicEnum(BasicValueEnum<'ctx>), // return by load inst.
-    Float(FloatValue<'ctx>),        // return
+    BasicEnum(BasicValueEnum<'ctx>), // return by load inst. (IdentExpr)
+    Float(FloatValue<'ctx>),        // return by other 
 }
 
 impl<'ctx> Codegen<'ctx> {
@@ -68,6 +68,7 @@ impl<'ctx> Codegen<'ctx> {
                 let builder = self.context.create_builder();
                 builder.position_at_end(*llvm_basic_block);
                 let llvm_value = builder.build_alloca(self.context.f64_type(), name.as_str());
+                self.symbol_table.insert(name.clone(), llvm_value);
                 builder.build_store(
                     llvm_value,
                     match variable_declaration.init {
@@ -170,7 +171,13 @@ impl<'ctx> Codegen<'ctx> {
     fn accecpt_expression(&self, expression: &Expr) -> ExprResult<'ctx> {
         match *expression {
             Expr::SequnceExpr(ref sequnce_expr) => {
-                panic!()
+                for index in 1..sequnce_expr.expressions.len() {
+                   if index == sequnce_expr.expressions.len() -1 {
+                    return self.accecpt_expression(&sequnce_expr.expressions[index]);
+                   }
+                   self.accecpt_expression(&sequnce_expr.expressions[index]);
+                }
+                panic!("[Error]: Unreach");
             }
             Expr::AssigmentExpr(ref assignment_expr) => {
                 self.accecpt_assigment_expression(assignment_expr)
@@ -326,5 +333,5 @@ impl<'ctx> Codegen<'ctx> {
                     }
 
                 }
-    } 
+    }
 }

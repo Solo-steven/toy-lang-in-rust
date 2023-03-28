@@ -1,4 +1,3 @@
-
 mod lexer;
 mod parser;
 mod codegen;
@@ -33,7 +32,9 @@ fn main() {
     println!("{:?}", token_vec);
     let mut parser = parser::Parser::new(String::from("
         function test(a, b): number {
-            return a + b / 3 + 9 / 8 * 6
+            var c = 10
+            a = b = c
+            return (a + b) / c 
         }
         function main(): number {
             return test(1, 2)
@@ -45,7 +46,7 @@ fn main() {
     let mut codegen = codegen::Codegen::new(&context,&program );
     codegen.generate();
     codegen.print_to_stderr();
-    println!("{:?}", parser.parse_program());
+    println!("{:?}", program);
     codegen.execute();
     
 
