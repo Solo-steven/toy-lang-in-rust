@@ -161,6 +161,46 @@ impl<'ctx> Codegen<'ctx> {
                     }
                 }
             }
+            Stmt::IfStmt(ref if_statement) => {
+                // Get test expr's value
+                let test_expr = &if_statement.test;
+                let test_expr_llvm_value = match self.accecpt_expression(test_expr) {
+                    ExprResult::BasicEnum(basic_value) => basic_value.into_float_value(),
+                    ExprResult::Float(float_value) => float_value
+                };
+                let llvm_basic_block = self.current_block.unwrap();
+                let builder = self.context.create_builder();
+                builder.position_at_end(llvm_basic_block);
+                let test_llvm_value = builder.build_float_compare(FloatPredicate::OEQ, test_expr_llvm_value, self.context.f64_type().const_float(1.0), "tmpCompare");
+                let llvm_function = llvm_basic_block.get_parent().unwrap();
+                let final_llvm_basic_block = self.context.append_basic_block(llvm_function, "tmpFinal");
+                // build conseq block
+                let conseq_llvm_basic_block = self.context.insert_basic_block_after(llvm_basic_block, "tmpConseq");
+                self.current_block = Some(conseq_llvm_basic_block);
+                self.accecpt_statement(if_statement.consequent.as_ref());
+                let conseq_builder = self.context.create_builder();
+                conseq_builder.position_at_end(conseq_llvm_basic_block);
+                conseq_builder.build_unconditional_branch(final_llvm_basic_block);
+                // build alter block if exist
+                let alter_llvm_basic_block = match &if_statement.alter {
+                    Some(alter_statement) => {
+                        let temp_alter_llvm_basic_block = self.context.insert_basic_block_after(conseq_llvm_basic_block, "tmpAlter");
+                        self.current_block = Some(temp_alter_llvm_basic_block);
+                        self.accecpt_statement(&alter_statement);
+                        let alter_builder = self.context.create_builder();
+                        alter_builder.position_at_end(temp_alter_llvm_basic_block);
+                        alter_builder.build_unconditional_branch(final_llvm_basic_block);
+
+                        temp_alter_llvm_basic_block
+                    }
+                    None => {
+                        final_llvm_basic_block
+                    }
+                };
+                // build branch from original block (predecessor)
+                builder.build_conditional_branch(test_llvm_value, conseq_llvm_basic_block, alter_llvm_basic_block);
+                self.current_block = Some(final_llvm_basic_block);
+            }
             _ => {
                 panic!("")
             }
@@ -251,7 +291,7 @@ impl<'ctx> Codegen<'ctx> {
         let llvm_basic_block = self.current_block.unwrap();
         let builder = self.context.create_builder();
         builder.position_at_end(llvm_basic_block);
-        let test_llvm_value = builder.build_float_compare(FloatPredicate::OEQ, test_llvm_value, self.context.f64_type().const_float(0.0), "tmpFComp");
+        let test_llvm_value = builder.build_float_compare(FloatPredicate::OEQ, test_llvm_value, self.context.f64_type().const_float(1.0), "tmpFComp");
         let llvm_function = llvm_basic_block.get_parent().unwrap();
         let conseq_llvm_basic_block = self.context.append_basic_block(llvm_function, "tmpConseq");
         let alter_llvm_basic_block = self.context.append_basic_block(llvm_function, "tmpAlter");

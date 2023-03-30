@@ -27,7 +27,7 @@ impl Parser {
         }
     }
     fn parse_program_item(&mut self) -> ProgramItem {
-        match self.tokenizer.get_token() {
+        let ast = match self.tokenizer.get_token() {
             Token::VarKeyword => {
                 ProgramItem::Decl(self.parse_variable_declaration())
             }
@@ -49,7 +49,14 @@ impl Parser {
             _ => {
                 ProgramItem::Expr(self.parse_expression())
             }
+        };
+        match self.tokenizer.get_token() {
+            Token::Semi => {
+                self.tokenizer.next_token();
+            }
+            _ => {}
         }
+        return ast;
     }
 /** =========================================
  *  Parse Statements
