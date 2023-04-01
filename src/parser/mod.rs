@@ -174,12 +174,21 @@ impl Parser {
         match self.tokenizer.get_token() {
             Token::ReturnKeyword => {
                 self.tokenizer.next_token();
-                return Stmt::ReturnStmt(ReturnStatement {
-                    argument: self.parse_expression()
-                })
             }
             _ => {
                 panic!("[Error]: Return Statement Should Start With Return Keyword.");
+            }
+        }
+        match self.tokenizer.get_token() {
+            Token::Semi | Token::BracesRight => {
+                Stmt::ReturnStmt(ReturnStatement {
+                    argument: None
+                })   
+            }
+            _  =>  {
+                Stmt::ReturnStmt(ReturnStatement {
+                    argument: Some(self.parse_expression())
+                })
             }
         }
     }
@@ -442,7 +451,7 @@ impl Parser {
             Token::Minus => {
                 self.tokenizer.next_token();
                 Expr::UnaryExpr(UnaryExpression {
-                    operator: Operator::Plus,
+                    operator: Operator::Minus,
                     argument: Box::<Expr>::new(self.parse_primary_expression())
                 })
             }
@@ -508,7 +517,6 @@ impl Parser {
                 }
                 _ => {
                     params.push(self.parse_condition_expression());
-                    println!("{:?}",params);
                 }
             }
             match self.tokenizer.get_token() {
@@ -516,7 +524,6 @@ impl Parser {
                     self.tokenizer.next_token();
                 }
                 _ => {
-                    println!("{:?}", self.tokenizer.get_token() );
                     break;
                 }
             }

@@ -153,7 +153,7 @@ pub struct IfStatement {
 }
 #[derive(Debug, PartialEq, Clone)]
 pub struct  ReturnStatement {
-    pub argument: Expr
+    pub argument: Option<Expr>
 }
 
 

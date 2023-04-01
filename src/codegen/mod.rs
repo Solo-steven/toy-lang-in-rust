@@ -3,7 +3,7 @@ use inkwell::module::Module;
 use inkwell::basic_block::BasicBlock;
 use inkwell::values::{PointerValue, FloatValue, BasicValueEnum,BasicMetadataValueEnum};
 use inkwell::FloatPredicate;
-use inkwell::types::{BasicMetadataTypeEnum};
+use inkwell::types::{BasicMetadataTypeEnum, VoidType, FloatType, BasicType};
 use inkwell::execution_engine::JitFunction;
 use inkwell::OptimizationLevel;
 
@@ -43,9 +43,16 @@ impl<'ctx> Codegen<'ctx> {
     }
     pub fn execute(&mut self) {
         let engine = self.module.create_jit_execution_engine(OptimizationLevel::Default).ok().unwrap();
-        let main_func: JitFunction<unsafe extern "C" fn() -> f64> = unsafe { engine.get_function("main").unwrap() };
-        unsafe {
-            println!("{:?}",main_func.call());
+        let main_func: Option<JitFunction<unsafe extern "C" fn() -> f64>> = unsafe { engine.get_function("main").ok() };
+        match main_func {
+            Some(fun) => {
+                unsafe {
+                    println!("{:?}",fun.call());
+                }
+            }
+            None => {
+                panic!("[Semantic Error]: Must have a main function as entry point");
+            }
         }
     }
     fn accecpt_program_item(&mut self, program_item: &ProgramItem)  {
@@ -64,6 +71,12 @@ impl<'ctx> Codegen<'ctx> {
     fn accecpt_declaration(&mut self, declaration: &Decl) {
         match *declaration {
             Decl::VariableDecl(ref variable_declaration) => {
+                /*
+                    Create New Pointer and Store it into Symbol table
+                      -> create a alloca command 
+                      -> store pointerValue into symbol table
+                      -> if init expr is exist, assignment value to pointer.
+                 */
                 let name = variable_declaration.name.clone();
                 let llvm_basic_block = self.current_block.as_ref().unwrap();
                 let builder = self.context.create_builder();
@@ -75,12 +88,8 @@ impl<'ctx> Codegen<'ctx> {
                     match variable_declaration.init {
                         Some(ref expr_ref) => {
                            match self.accecpt_expression(expr_ref) {
-                                ExprResult::Float(float_value) => {
-                                    float_value
-                                }
-                                ExprResult::BasicEnum(basic_value) => {
-                                    basic_value.into_float_value()
-                                } 
+                                ExprResult::Float(float_value) => float_value,
+                                ExprResult::BasicEnum(basic_value) => basic_value.into_float_value()
                            }
                         }
                         None => {
@@ -91,31 +100,37 @@ impl<'ctx> Codegen<'ctx> {
             }
             Decl::FunctionDecl(ref function_declaration) => {
                 /*
-                   Create Function Signature
-                    -> 1. set up return type
-                    -> 2. set up params type
-                    -> 3. set up function name
+                   Create Function Signature 
+                    ->  set up return type
+                    ->  set up params type
+                    ->  set up function name
                  */
-                let fun_name = function_declaration.name.clone();
-                let fun_return_type = match function_declaration.return_type {
+                let fun_name = function_declaration.name.as_str();
+                match self.module.get_function(fun_name) {
+                    Some(_) => {
+                        // function already exist.
+                        panic!("[Semantic Error]: function {:?} already exist.", fun_name);
+                    }
+                    None => {}
+                };
+                let mut param_types:Vec::<BasicMetadataTypeEnum> = vec![];
+                for _i in 0..function_declaration.arguments.len() {
+                    param_types.push(BasicMetadataTypeEnum::FloatType(self.context.f64_type()))
+                }
+                let llvm_fun_type = match function_declaration.return_type {
                         Type::Number => {
-                            self.context.f64_type()
+                            self.context.f64_type().fn_type(param_types.as_ref(),false)
+                        }
+                        Type::Void => {
+                            self.context.void_type().fn_type(param_types.as_ref(), false)
                         }
                         _ => {
-                            panic!("");
+                            panic!("[Semantice Error]: Function's return type must be either number or void.");
                         }
                 };
-                let mut params_type:Vec::<BasicMetadataTypeEnum> = vec![];
-                for _i in 0..function_declaration.arguments.len() {
-                    params_type.push(BasicMetadataTypeEnum::FloatType(self.context.f64_type()))
-                }
-                let llvm_fun_type = fun_return_type.fn_type(
-                    params_type.as_ref(), 
-                    false
-                );
-                let llvm_fun_value = self.module.add_function(fun_name.as_str(), llvm_fun_type, None);
+                let llvm_fun_value = self.module.add_function(fun_name, llvm_fun_type, None);
                 /*
-                  Create Entry Block's Load instruction
+                  Create Entry Block's for Load instruction
                     ->  1. create entry local for allocate local variable.
                     ->  2. allocate local variable.
                     ->  3. Load every local register by load instruction
@@ -133,7 +148,6 @@ impl<'ctx> Codegen<'ctx> {
                     );
                     self.symbol_table.insert(argument.clone(), local_pointer_value);
                 }
-                
                 self.current_block = Some(entry_block_of_function);
                 self.accecpt_statement(&function_declaration.body);
                 self.current_block = None;
@@ -148,18 +162,21 @@ impl<'ctx> Codegen<'ctx> {
                 }
             }
             Stmt::ReturnStmt(ref return_statement) => {
-                let llvm_value = self.accecpt_expression(&return_statement.argument);
                 let llvm_basic_block = self.current_block.as_ref().unwrap();
                 let builder = self.context.create_builder();
                 builder.position_at_end(*llvm_basic_block);
-                match llvm_value {
-                    ExprResult::Float(float_value) => {
-                        builder.build_return(Some(&float_value));
+                match return_statement.argument {
+                    Some(ref return_expr) => {
+                        let llvm_value = self.accecpt_expression(return_expr);
+                        match llvm_value {
+                            ExprResult::Float(float_value) => builder.build_return(Some(&float_value)),
+                            ExprResult::BasicEnum(basic_value) => builder.build_return(Some(&basic_value))
+                        };
                     }
-                    ExprResult::BasicEnum(basic_value) => {
-                        builder.build_return(Some(&basic_value));
+                    None => {
+                        builder.build_return(None);
                     }
-                }
+                };
             }
             Stmt::IfStmt(ref if_statement) => {
                 // Get test expr's value
@@ -171,7 +188,7 @@ impl<'ctx> Codegen<'ctx> {
                 let llvm_basic_block = self.current_block.unwrap();
                 let builder = self.context.create_builder();
                 builder.position_at_end(llvm_basic_block);
-                let test_llvm_value = builder.build_float_compare(FloatPredicate::OEQ, test_expr_llvm_value, self.context.f64_type().const_float(1.0), "tmpCompare");
+                let test_llvm_value = builder.build_float_compare(FloatPredicate::OGT, test_expr_llvm_value, self.context.f64_type().const_float(0.0), "tmpCompare");
                 let llvm_function = llvm_basic_block.get_parent().unwrap();
                 let final_llvm_basic_block = self.context.append_basic_block(llvm_function, "tmpFinal");
                 // build conseq block
@@ -190,7 +207,6 @@ impl<'ctx> Codegen<'ctx> {
                         let alter_builder = self.context.create_builder();
                         alter_builder.position_at_end(temp_alter_llvm_basic_block);
                         alter_builder.build_unconditional_branch(final_llvm_basic_block);
-
                         temp_alter_llvm_basic_block
                     }
                     None => {
@@ -201,8 +217,35 @@ impl<'ctx> Codegen<'ctx> {
                 builder.build_conditional_branch(test_llvm_value, conseq_llvm_basic_block, alter_llvm_basic_block);
                 self.current_block = Some(final_llvm_basic_block);
             }
-            _ => {
-                panic!("")
+            Stmt::WhileStmt(ref while_statement) => {
+                /*
+                    Codegen three block, test, loop and afther loop.
+                    -> test run condition
+                 */
+                
+                let llvm_function = self.current_block.unwrap().get_parent().unwrap();
+                let test_llvm_basic_block = self.context.append_basic_block(llvm_function , "testloop");
+                let llvm_basic_block = self.current_block.unwrap();
+                let builder = self.context.create_builder();
+                builder.position_at_end(llvm_basic_block);
+                builder.build_unconditional_branch(test_llvm_basic_block);
+                self.current_block = Some(test_llvm_basic_block);
+                let test_expr_llvm_value = match self.accecpt_expression(&while_statement.test) {
+                    ExprResult::BasicEnum(basic_value) => basic_value.into_float_value(),
+                    ExprResult::Float(float_value) => float_value
+                };
+                let test_builder = self.context.create_builder();
+                test_builder.position_at_end(test_llvm_basic_block);
+                let test_llvm_value = test_builder.build_float_compare(FloatPredicate::OGT, test_expr_llvm_value, self.context.f64_type().const_float(0.0), "tmpCompare");
+                let body_llvm_basic_block = self.context.insert_basic_block_after(test_llvm_basic_block, "loop");
+                let after_llvm_basic_block = self.context.insert_basic_block_after(body_llvm_basic_block, "aftherloop");
+                test_builder.build_conditional_branch(test_llvm_value, body_llvm_basic_block, after_llvm_basic_block);
+                self.current_block = Some(body_llvm_basic_block);
+                self.accecpt_statement(&while_statement.body);
+                let body_builder = self.context.create_builder();
+                body_builder.position_at_end(body_llvm_basic_block);
+                body_builder.build_unconditional_branch(test_llvm_basic_block);
+                self.current_block = Some(after_llvm_basic_block);
             }
         }
     }
@@ -215,7 +258,7 @@ impl<'ctx> Codegen<'ctx> {
                    }
                    self.accecpt_expression(&sequnce_expr.expressions[index]);
                 }
-                panic!("[Error]: Unreach");
+                panic!("[Runtime Error]: Unreach zone, Sequence expression should return last expression's llvm value.");
             }
             Expr::AssigmentExpr(ref assignment_expr) => {
                 self.accecpt_assigment_expression(assignment_expr)
@@ -234,9 +277,7 @@ impl<'ctx> Codegen<'ctx> {
                 ExprResult::Float(self.context.f64_type().const_float(number_literal.value))
             }
             Expr::Ident(ref identifier) => {
-                /*
-                   load pointer value from symbol table
-                 */
+                // load pointer value from symbol table
                 let llvm_basic_block = self.current_block.as_ref().unwrap();
                 let builder = self.context.create_builder();
                 builder.position_at_end(*llvm_basic_block);
@@ -247,7 +288,7 @@ impl<'ctx> Codegen<'ctx> {
                         ExprResult::BasicEnum(llvm_load_result)
                     }
                     None => {
-                        panic!()
+                        panic!("[Semantic Error]: Can't not using Identifier {:?} before delcarate it.", identifier.name.as_str());
                     }
                 }
             }
@@ -273,7 +314,7 @@ impl<'ctx> Codegen<'ctx> {
                 self.symbol_table.get(ident.name.as_str()).unwrap()
             }
             _ => {
-                panic!("[]");
+                panic!("[Semantic Error]: Invalid Left value, Left value should be assignable.");
             }
         };
         let llvm_basic_block = self.current_block.as_ref().unwrap();
@@ -283,6 +324,12 @@ impl<'ctx> Codegen<'ctx> {
         ExprResult::Float(rhs)
     }
     fn accept_conditional_expression(&mut self, conditional_expr: &ConditionExpression) -> ExprResult<'ctx> {
+        /*
+            Codegen Three block for conseq, alter and final, and using phi inst to assigment value.
+              -> generate test value and branch command.
+              -> build conseq and alter block.
+              -> create phi inst in final block.
+         */
         // test
         let test_llvm_value = match self.accecpt_expression(&conditional_expr.test) {
             ExprResult::Float(float_value) => float_value,
@@ -329,22 +376,16 @@ impl<'ctx> Codegen<'ctx> {
                 -> 1. get llvm_value from left and right hand side.
                 -> 2. build the numeric inst based on operator.
                 -> 3. return llvm_value based on  numeric inst.
-            */
+        */
         let lhs_llvm_value = match self.accecpt_expression(binary_expr.left.as_ref()) {
-            ExprResult::Float(float_value) => {
-                float_value
-            }
-            ExprResult::BasicEnum(basic_enum) => {
-                basic_enum.into_float_value()
-            }
+            ExprResult::Float(float_value) => float_value,
+            ExprResult::BasicEnum(basic_enum) => basic_enum.into_float_value()
+            
         };
         let rhs_llvm_value = match self.accecpt_expression(binary_expr.right.as_ref()) {
-            ExprResult::Float(float_value) => {
-                float_value
-            }
-            ExprResult::BasicEnum(basic_enum) => {
-                basic_enum.into_float_value()
-            }
+            ExprResult::Float(float_value) => float_value,
+            ExprResult::BasicEnum(basic_enum) => basic_enum.into_float_value()
+            
         };
         let llvm_basic_block = self.current_block.as_ref().unwrap();
         let builder = self.context.create_builder();
@@ -365,13 +406,38 @@ impl<'ctx> Codegen<'ctx> {
             Operator::Mod => {
                 ExprResult::Float(builder.build_float_rem(lhs_llvm_value, rhs_llvm_value, "tempMod"))
             }
-            _ => {
-                panic!()
+            Operator::Eq => {
+                let result = builder.build_float_compare(FloatPredicate::UEQ, lhs_llvm_value, rhs_llvm_value, "tempEq");
+                ExprResult::Float(builder.build_unsigned_int_to_float(result, self.context.f64_type(), "tempCast"))
             }
-
+            Operator::NotEq => {
+                let result = builder.build_float_compare(FloatPredicate::ONE, lhs_llvm_value, rhs_llvm_value, "tempNotEq");
+                ExprResult::Float(builder.build_unsigned_int_to_float(result, self.context.f64_type(), "tempCast"))
+            }
+            Operator::Gt => {
+                let result = builder.build_float_compare(FloatPredicate::OGT, lhs_llvm_value, rhs_llvm_value, "tempGt");
+                ExprResult::Float(builder.build_unsigned_int_to_float(result, self.context.f64_type(), "tempCast"))
+            }
+            Operator::Gteq => {
+                let result = builder.build_float_compare(FloatPredicate::OGE, lhs_llvm_value, rhs_llvm_value, "tempGteq");
+                ExprResult::Float(builder.build_unsigned_int_to_float(result, self.context.f64_type(), "tempCast"))
+            }
+            Operator::Lt => {
+                let result = builder.build_float_compare(FloatPredicate::OLT, lhs_llvm_value, rhs_llvm_value, "tempLt");
+                ExprResult::Float(builder.build_unsigned_int_to_float(result, self.context.f64_type(), "tempCast"))
+            }
+            Operator::Lteq => {
+                let result = builder.build_float_compare(FloatPredicate::OLE, lhs_llvm_value, rhs_llvm_value, "tempLteq");
+                ExprResult::Float(builder.build_unsigned_int_to_float(result, self.context.f64_type(), "tempCast"))
+            }
         }
     }
     fn accept_unary_expression(&mut self, unary_expr: &UnaryExpression) -> ExprResult<'ctx> {
+        /*
+            Codegen floatneg command if operator is minus
+             -> 1. if operator is plus, there is no need for generate command
+             -> 2. if operator is minus, generate floatneg command. 
+         */
         let llvm_value = match self.accecpt_expression(unary_expr.argument.as_ref()) {
             ExprResult::BasicEnum(basic_value) => basic_value.into_float_value(),
             ExprResult::Float(float_value) => float_value
@@ -387,7 +453,7 @@ impl<'ctx> Codegen<'ctx> {
                 ExprResult::Float(builder.build_float_neg(llvm_value, "tmpNeg"))
             }
             _ => {
-                panic!()
+                panic!("[Runtime Error]: Unary ops shouldn't be {:?}, parser has some error ", unary_expr.operator)
             }
         }
     }
@@ -398,12 +464,8 @@ impl<'ctx> Codegen<'ctx> {
                 for param in &call_expr.params {
                     llvm_params_value.push(
                         match self.accecpt_expression(param) {
-                            ExprResult::Float(float_value) => {
-                                float_value.into()
-                            }
-                            ExprResult::BasicEnum(basic_value) => {
-                                basic_value.into()
-                            }
+                            ExprResult::Float(float_value) => float_value.into(),
+                            ExprResult::BasicEnum(basic_value) => basic_value.into()
                         }
                     )
                 }                    
@@ -422,7 +484,7 @@ impl<'ctx> Codegen<'ctx> {
                 )
             }
             None => {
-                panic!();
+                panic!("[Semantic Error]: Can't using function {:?} before declarate it", call_expr.callee_name.as_str());
             }
         }
     }
