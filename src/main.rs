@@ -25,7 +25,7 @@ fn main() {
             return test(-1, 2)
         }
     "));
-    let program = parser.parse_program();
+    let program = parser.parse();
     println!("{:?}", program);
     let context = Context::create();
     let mut codegen = codegen::Codegen::new(&context,&program );

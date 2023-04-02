@@ -1,6 +1,9 @@
 use crate::lexer::Lexer;
 use crate::token::{Token, get_pre_of_binary_op, is_binary_op};
 use crate::ast::*;
+
+mod test;
+
 pub struct  Parser {
     tokenizer: Lexer,
 }
@@ -10,13 +13,19 @@ impl Parser {
             tokenizer: Lexer::new(code)
         }
     }
-    fn sytanx_error(&self) {
-        panic!()
+    pub fn parse(&mut self) -> Program {
+        return self.parse_program();
     }
-    pub fn parse_program(&mut self) -> Program {
+    fn next_token(&mut self) -> Token {
+        return self.tokenizer.next_token();
+    }
+    fn get_token(&mut self) -> Token {
+        return self.tokenizer.get_token();
+    }
+    fn parse_program(&mut self) -> Program {
         let mut body = Vec::<ProgramItem>::new();
         loop {
-            match self.tokenizer.get_token() {
+            match self.get_token() {
                 Token::EOF => {
                     return Program { body }
                 }
@@ -27,7 +36,7 @@ impl Parser {
         }
     }
     fn parse_program_item(&mut self) -> ProgramItem {
-        let ast = match self.tokenizer.get_token() {
+        let ast = match self.get_token() {
             Token::VarKeyword => {
                 ProgramItem::Decl(self.parse_variable_declaration())
             }
@@ -50,7 +59,7 @@ impl Parser {
                 ProgramItem::Expr(self.parse_expression())
             }
         };
-        match self.tokenizer.get_token() {
+        match self.get_token() {
             Token::Semi => {
                 self.tokenizer.next_token();
             }
@@ -64,15 +73,15 @@ impl Parser {
  */
     fn parse_while_statement(&mut self) -> Stmt {
         let test: Expr;
-        match self.tokenizer.get_token() {
+        match self.get_token() {
              Token::WhileKeyword  => {
                 self.tokenizer.next_token();
              }
              _ => {
-                self.sytanx_error();
+                panic!("[Runtime Error]: While statement should be start with `while` keyword");
              }
         }
-        match self.tokenizer.get_token() {
+        match self.get_token() {
             Token::ParenthesesLeft  => {
                 self.tokenizer.next_token();
                 test = self.parse_expression();
@@ -81,7 +90,7 @@ impl Parser {
                 panic!("[Error]: While Statement's Condition Should be Wrapped By ParentheseLeft");
             }
        }
-       match self.tokenizer.get_token() {
+       match self.get_token() {
             Token::ParenthesesRight => {
                 self.tokenizer.next_token();
             }
@@ -96,17 +105,17 @@ impl Parser {
 
     }
     fn parse_block_statement(&mut self) -> Stmt {
-        match self.tokenizer.get_token() {
+        match self.get_token() {
             Token::BracesLeft => {
                 self.tokenizer.next_token();
             }
             _ => {
-                panic!("[Error]: BlockStatement Should Start With BraceLeft, {:?}", self.tokenizer.get_token());
+                panic!("[Error]: BlockStatement Should Start With BraceLeft, {:?}", self.get_token());
             }
         }
         let mut body: Vec<ProgramItem> = Vec::<ProgramItem>::new();
         loop {
-            match self.tokenizer.get_token() {
+            match self.get_token() {
                 Token::EOF => {
                     panic!("[Error]: BlockStatement End Without BraceRight");
                 }
@@ -123,7 +132,7 @@ impl Parser {
         }
     }
     fn parse_if_statement(&mut self) -> Stmt {
-        match self.tokenizer.get_token() {
+        match self.get_token() {
             Token::IfKeyword => {
                 self.tokenizer.next_token();
             }
@@ -132,7 +141,7 @@ impl Parser {
             }
         }
         let test:Expr;
-        match self.tokenizer.get_token() {
+        match self.get_token() {
             Token::ParenthesesLeft  => {
                 self.tokenizer.next_token();
                 test = self.parse_expression();
@@ -141,7 +150,7 @@ impl Parser {
                 panic!("[Error]: Condition Of If Statement Should be Wrapper In Parentheses, Lock of ParentheseLeft");
             }
        }
-       match self.tokenizer.get_token() {
+       match self.get_token() {
             Token::ParenthesesRight => {
                 self.tokenizer.next_token();
             }
@@ -150,10 +159,10 @@ impl Parser {
             }
        }
        let consequence = self.parse_block_statement();
-       match self.tokenizer.get_token() {
+       match self.get_token() {
            Token::ElesKeyword => {
              self.tokenizer.next_token();
-             match self.tokenizer.get_token() {
+             match self.get_token() {
                 Token::BracesLeft => {
                     Stmt::IfStmt(IfStatement { test, consequent: Box::new(consequence), alter:Some(Box::new(self.parse_block_statement())) })
                 }
@@ -171,7 +180,7 @@ impl Parser {
        }
     }
     fn parse_return_statement(&mut self) -> Stmt {
-        match self.tokenizer.get_token() {
+        match self.get_token() {
             Token::ReturnKeyword => {
                 self.tokenizer.next_token();
             }
@@ -179,7 +188,7 @@ impl Parser {
                 panic!("[Error]: Return Statement Should Start With Return Keyword.");
             }
         }
-        match self.tokenizer.get_token() {
+        match self.get_token() {
             Token::Semi | Token::BracesRight => {
                 Stmt::ReturnStmt(ReturnStatement {
                     argument: None
@@ -198,7 +207,7 @@ impl Parser {
  */
     fn parse_variable_declaration(&mut self) -> Decl {
         let identifier_name: String;
-        match self.tokenizer.get_token() {
+        match self.get_token() {
             Token::VarKeyword => {
                 self.tokenizer.next_token();
             }
@@ -206,7 +215,7 @@ impl Parser {
                 panic!("[Error]: Variable Declaration Should Start With `var` keyword");
             }
         }
-        match self.tokenizer.get_token() {
+        match self.get_token() {
             Token::Identifier(value) => {
                 self.tokenizer.next_token();
                 identifier_name = value;
@@ -215,7 +224,7 @@ impl Parser {
                 panic!("[Error]: Variable Delcaration Should Provide A Identifier.");
             }
         }
-        return match self.tokenizer.get_token() {
+        return match self.get_token() {
             Token::Assign => {
                 self.tokenizer.next_token();
                 let init_expression = self.parse_expression();
@@ -235,7 +244,7 @@ impl Parser {
     fn parse_function_declaration(&mut self) -> Decl {
         let function_name: String;
         let function_type: Type;
-        match self.tokenizer.get_token() {
+        match self.get_token() {
             Token::FunctionKeyword => {
                 self.tokenizer.next_token();
             }
@@ -243,7 +252,7 @@ impl Parser {
                 panic!("[Error]: Function Declaration Should Start With `var` keyword");
             }
         }
-        match self.tokenizer.get_token() {
+        match self.get_token() {
             Token::Identifier(value) => {
                 self.tokenizer.next_token();
                 function_name = value;
@@ -253,16 +262,16 @@ impl Parser {
             }
         }
         let arguments = self.parse_function_declaration_aruguments();
-        match self.tokenizer.get_token() {
+        match self.get_token() {
             Token::Colon => {
                 self.tokenizer.next_token();
             }
             _ => {
                 println!("{:?}", arguments);
-                panic!("[Error]: Function Declaration Must Has Return Type With Colon, But Got {:?}", self.tokenizer.get_token())
+                panic!("[Error]: Function Declaration Must Has Return Type With Colon, But Got {:?}", self.get_token())
             }
         }
-        match self.tokenizer.get_token() {
+        match self.get_token() {
             Token::NumberKeyword  => {
                 self.tokenizer.next_token();
                 function_type  = Type::Number;
@@ -272,7 +281,7 @@ impl Parser {
                 function_type = Type::Void;
              }
             _ => {
-                panic!("[Error]: Function Declaration Must Has Return Type, But Got {:?}", self.tokenizer.get_token())
+                panic!("[Error]: Function Declaration Must Has Return Type, But Got {:?}", self.get_token())
             }
         }
         let body = self.parse_block_statement();
@@ -286,34 +295,34 @@ impl Parser {
     }
     // argument -> identifier [',' identifier]
     fn parse_function_declaration_aruguments(&mut self) -> Vec<String> {
-        match self.tokenizer.get_token() {
+        match self.get_token() {
             Token::ParenthesesLeft => {
                 self.tokenizer.next_token();
             }
             _ => {
-                panic!("[Error]: Function Declaration Params Must Be Wrapped In ParenthesesLeft, But Got {:?}", self.tokenizer.get_token())
+                panic!("[Error]: Function Declaration Params Must Be Wrapped In ParenthesesLeft, But Got {:?}", self.get_token())
             }
         }
         let mut params = Vec::<String>::new();
-        match self.tokenizer.get_token() {
+        match self.get_token() {
             Token::Identifier(name) => {
                 params.push(name);
                 self.tokenizer.next_token();
             }
             _ => {
-                match self.tokenizer.get_token() {
+                match self.get_token() {
                     Token::ParenthesesRight => {
                         self.tokenizer.next_token();
                     }
                     _ => {
-                        panic!("[Error]: Function Declaration Params Must Be Wrapped In ParenthesesRight, But Got {:?}", self.tokenizer.get_token())
+                        panic!("[Error]: Function Declaration Params Must Be Wrapped In ParenthesesRight, But Got {:?}", self.get_token())
                     }
                 }
                 return params;
             }
         }
         loop {
-            match self.tokenizer.get_token() {
+            match self.get_token() {
                 Token::Comma => {
                     self.tokenizer.next_token();
                 }
@@ -321,7 +330,7 @@ impl Parser {
                     break
                 }
             }
-            match self.tokenizer.get_token() {
+            match self.get_token() {
                 Token::Identifier(name) => {
                     params.push(name);
                     self.tokenizer.next_token();
@@ -331,12 +340,12 @@ impl Parser {
                 }
             }
         }
-        match self.tokenizer.get_token() {
+        match self.get_token() {
             Token::ParenthesesRight => {
                 self.tokenizer.next_token();
             }
             _ => {
-                panic!("[Error]: Function Declaration Params Must Be Wrapped In ParenthesesRight, But Got {:?}", self.tokenizer.get_token())
+                panic!("[Error]: Function Declaration Params Must Be Wrapped In ParenthesesRight, But Got {:?}", self.get_token())
             }
         }
         return params;
@@ -348,7 +357,7 @@ impl Parser {
     fn parse_expression(&mut self) -> Expr {
         let mut expressions = vec![self.parse_assignment_expression()];
         loop {
-            match self.tokenizer.get_token() {
+            match self.get_token() {
                 Token::Comma => {
                     self.tokenizer.next_token();
                     expressions.push(self.parse_assignment_expression())
@@ -368,7 +377,7 @@ impl Parser {
     }
     fn parse_assignment_expression(&mut self) -> Expr {
         let left = self.parse_condition_expression();
-        return match self.tokenizer.get_token() {
+        return match self.get_token() {
             Token::Assign => {
                 self.tokenizer.next_token();
                 Expr::AssigmentExpr(AssigmentExpression { 
@@ -383,7 +392,7 @@ impl Parser {
     }
     fn parse_condition_expression(&mut self) -> Expr {
         let test = self.parse_binary_expression();
-        match self.tokenizer.get_token() {
+        match self.get_token() {
             Token::Qustion => {
                 self.tokenizer.next_token();
             }
@@ -392,7 +401,7 @@ impl Parser {
             }
         }
         let consequence =  self.parse_binary_expression();
-        match self.tokenizer.get_token() {
+        match self.get_token() {
             Token::Colon => {
                 self.tokenizer.next_token();
                 return Expr::ConditionExpr(ConditionExpression {
@@ -409,7 +418,7 @@ impl Parser {
     }
     fn parse_binary_expression(&mut self)-> Expr {
         let atom = self.parse_unary_expression();
-        let op = self.tokenizer.get_token();
+        let op = self.get_token();
         if is_binary_op(&op) {
             return self.parse_binary_ops(atom, -1)
         }
@@ -417,13 +426,13 @@ impl Parser {
     }
     fn parse_binary_ops(&mut self, mut left: Expr, last_pre: i32) -> Expr {
         loop {
-            let current_op = self.tokenizer.get_token();
+            let current_op = self.get_token();
             if !is_binary_op(&current_op) || get_pre_of_binary_op(&current_op) < last_pre {
                 break;
             }
             self.tokenizer.next_token();
             let mut right = self.parse_unary_expression();
-            let next_op = self.tokenizer.get_token();
+            let next_op = self.get_token();
             if  
                 is_binary_op(&next_op) && 
                 (get_pre_of_binary_op(&next_op) > get_pre_of_binary_op(&current_op)) 
@@ -440,7 +449,7 @@ impl Parser {
         return left;
     }
     fn parse_unary_expression(&mut self) -> Expr {
-        return match self.tokenizer.get_token() {
+        return match self.get_token() {
             Token::Plus => {
                 self.tokenizer.next_token();
                 Expr::UnaryExpr(UnaryExpression {
@@ -461,10 +470,10 @@ impl Parser {
         }
     }
     fn parse_primary_expression(&mut self) -> Expr {
-        match self.tokenizer.get_token() {
+        match self.get_token() {
             Token::Identifier(identifier) => {
                 self.tokenizer.next_token();
-                match self.tokenizer.get_token() {
+                match self.get_token() {
                     Token::ParenthesesLeft => {
                         let params = self.parse_call_expression_param();
                         Expr::CallExpr(CallExpression { callee_name: identifier, params })
@@ -485,33 +494,33 @@ impl Parser {
             Token::ParenthesesLeft => {
                 self.tokenizer.next_token();
                 let expr = self.parse_expression();
-                return match self.tokenizer.get_token() {
+                return match self.get_token() {
                     Token::ParenthesesRight => {
                         self.tokenizer.next_token();
                         expr
                     }
                     _ => {
-                        panic!("[Error]: CoverParenthesizedExpression Must End With ParentheseRight, But Got {:?}", self.tokenizer.get_token());
+                        panic!("[Error]: CoverParenthesizedExpression Must End With ParentheseRight, But Got {:?}", self.get_token());
                     }
                 }
             }
             _ => {
-                panic!("[Error]: Failed For Get Primary Expression, Unexecpted Token {:?}.", self.tokenizer.get_token())
+                panic!("[Error]: Failed For Get Primary Expression, Unexecpted Token {:?}.", self.get_token())
             }
         }
     }
     fn parse_call_expression_param(&mut self) -> Vec<Expr> {
         let mut params = Vec::<Expr>::new();
-        match self.tokenizer.get_token() {
+        match self.get_token() {
             Token::ParenthesesLeft  => {
                 self.tokenizer.next_token();
             }
             _ => {
-                panic!("[Error]: CallExpression's Param Call Be Wrapped By ParentheseLeft, But Got {:?}", self.tokenizer.get_token());
+                panic!("[Error]: CallExpression's Param Call Be Wrapped By ParentheseLeft, But Got {:?}", self.get_token());
             }
         }
         loop {
-            match self.tokenizer.get_token() {
+            match self.get_token() {
                 Token::ParenthesesRight => {
                     break;
                 }
@@ -519,7 +528,7 @@ impl Parser {
                     params.push(self.parse_condition_expression());
                 }
             }
-            match self.tokenizer.get_token() {
+            match self.get_token() {
                 Token::Comma => {
                     self.tokenizer.next_token();
                 }
@@ -528,12 +537,12 @@ impl Parser {
                 }
             }
         }
-        match self.tokenizer.get_token() {
+        match self.get_token() {
             Token::ParenthesesRight  => {
                 self.tokenizer.next_token();
             }
             _ => {
-                panic!("[Error]: CallExpression's Param Call Be Wrapped By ParentheseRight, But Got {:?}", self.tokenizer.get_token());
+                panic!("[Error]: CallExpression's Param Call Be Wrapped By ParentheseRight, But Got {:?}", self.get_token());
             }
         }
         return params;
