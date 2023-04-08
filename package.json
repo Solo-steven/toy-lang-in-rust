@@ -1,0 +1,7 @@
+{
+  "name": "toy-lang-in-rust",
+  "workspaces": [
+    "packages/web-frontend"
+  ],
+  "packageManager": "yarn@3.5.0"
+}
