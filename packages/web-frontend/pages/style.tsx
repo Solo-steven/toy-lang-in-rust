@@ -95,10 +95,7 @@ export const IntroductionTitle = styled.div`
 export const IntroductionContent = styled.div`
     ${props => props.theme.typography.body1}
     color: #F2F0FF;
-    text-align: left;
-    padding-bottom: 40px;
-    border-bottom: 1px solid #F2F0FF;
-    margin-bottom: 25px;
+    padding-top: 12px;
 `;
 
 export const ArticlePreviewRoot = styled.div`

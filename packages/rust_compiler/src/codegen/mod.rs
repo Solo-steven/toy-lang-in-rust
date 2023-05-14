@@ -36,24 +36,28 @@ impl<'ctx> Codegen<'ctx> {
     pub fn print_to_stderr(&self) {
         self.module.print_to_stderr();
     }
-    pub fn generate(&mut self) {
-        for program_item in &self.program.body {
-            self.accecpt_program_item(program_item);
-        };
+    pub fn get_llvm_code_as_string(&self) -> String {
+        self.module.print_to_string().to_string()
     }
-    pub fn execute(&mut self) {
+    pub fn execute(&mut self) -> f64 {
         let engine = self.module.create_jit_execution_engine(OptimizationLevel::Default).ok().unwrap();
         let main_func: Option<JitFunction<unsafe extern "C" fn() -> f64>> = unsafe { engine.get_function("main").ok() };
         match main_func {
             Some(fun) => {
                 unsafe {
-                    println!("{:?}",fun.call());
+                    let result: f64 = fun.call();
+                    return result;
                 }
             }
             None => {
                 panic!("[Semantic Error]: Must have a main function as entry point");
             }
         }
+    }
+    pub fn generate(&mut self) {
+        for program_item in &self.program.body {
+            self.accecpt_program_item(program_item);
+        };
     }
     fn accecpt_program_item(&mut self, program_item: &ProgramItem)  {
         match *program_item {

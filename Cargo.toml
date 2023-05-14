@@ -1,2 +1,2 @@
 [workspace]
-members = ["packages/rust-compiler", "packages/web-backend"]
+members = ["packages/rust_compiler", "packages/web_backend"]

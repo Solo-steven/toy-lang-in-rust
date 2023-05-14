@@ -31,8 +31,8 @@ const Page: NextPage<PageProps> = ({
               <S.IntroductionTitle>{introduction.title}</S.IntroductionTitle>
               {Array.isArray(introduction.content) ? 
                   introduction.content.map(singleLine => (
-                    <S.ArticlePreviewContent key={singleLine} >{singleLine}</S.ArticlePreviewContent>
-                  )) : <S.ArticlePreviewContent>{introduction.content}</S.ArticlePreviewContent>}
+                    <S.IntroductionContent key={singleLine} >{singleLine}</S.IntroductionContent>
+                  )) : <S.IntroductionContent>{introduction.content}</S.IntroductionContent>}
             </S.IntroductionRoot>
             {articlePreviews.map(articlePreview => (
               <S.ArticlePreviewRoot key={articlePreview.title}>

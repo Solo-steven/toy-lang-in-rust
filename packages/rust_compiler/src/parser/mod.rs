@@ -13,6 +13,9 @@ impl Parser {
             tokenizer: Lexer::new(code)
         }
     }
+    /**
+       public api for parse given string
+     */
     pub fn parse(&mut self) -> Program {
         return self.parse_program();
     }
